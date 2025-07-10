@@ -2,10 +2,13 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from fastapi import FastAPI, Query
 from typing import List, Optional
+from dotenv import load_dotenv
 import uvicorn
+import os
+load_dotenv() 
 
 app = FastAPI()
-uri = "mongodb+srv://24sunrin084:sunrinchan@fycus.qx0per4.mongodb.net/?retryWrites=true&w=majority&appName=fycus"
+uri = os.getenv("MONGODB_URI")
 
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["user"]
@@ -21,8 +24,8 @@ def main():
     return {"message": "hello world!"}
 
 
-@app.post("/signup")
-def signup(
+@app.post("/register")
+def signregisterup(
     userID: str = Query(...),
     name: Optional[str] = Query(None),
     school: Optional[str] = Query(None),
@@ -57,12 +60,14 @@ def signup(
     users_collection.insert_one(data)
     return {"message": f"User {data.get('userID')} signed up successfully!"}
 
-@app.post("/signin")
-def signin(userID: str = Query(...), password: str = Query(None)):
+@app.post("/login")
+def login(userID: str = Query(...), password: str = Query(None)):
     if not userID or not password:
         return {"error": "UserID and password are required."}
 
     user = users_collection.find_one({"userID": userID})
+
+
 
     if user and user.get("password") == password:
         return {"message": f"User {userID} signed in successfully!"}
@@ -70,3 +75,21 @@ def signin(userID: str = Query(...), password: str = Query(None)):
         return {"error": "Invalid password."}
     else:
         return {"error": "UserID not found."}
+
+
+@app.get("/userInfo")
+def get_user_info(userID: str = Query(...)):
+    user = users_collection.find_one({"userID": userID})
+
+    if not user:
+        return {"error": "UserID not found."}
+    else:
+        user_data = {
+            "userID": user.get("userID"),
+            "name": user.get("name"),
+            "school": user.get("school"),
+            "gmail": user.get("gmail"),
+            "grade": user.get("grade"),
+            "subjects": user.get("subjects", [])
+        }
+        return {"userInfo": user_data}
