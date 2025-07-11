@@ -5,6 +5,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 import uvicorn
 import os
+import time
 load_dotenv() 
 
 app = FastAPI()
@@ -25,7 +26,7 @@ def main():
 
 
 @app.post("/register")
-def signregisterup(
+def register(
     userID: str = Query(...),
     name: Optional[str] = Query(None),
     school: Optional[str] = Query(None),
@@ -48,7 +49,7 @@ def signregisterup(
         "gmail": gmail,
         "password": password,
         "grade": grade,
-        "subjects": subjects
+        "subjects": subjects,
     }
     if not data.get("userID") or not data.get("password"):
         return {"error": "UserID and password are required."}
@@ -76,7 +77,6 @@ def login(userID: str = Query(...), password: str = Query(None)):
     else:
         return {"error": "UserID not found."}
 
-
 @app.get("/userInfo")
 def get_user_info(userID: str = Query(...)):
     user = users_collection.find_one({"userID": userID})
@@ -90,6 +90,106 @@ def get_user_info(userID: str = Query(...)):
             "school": user.get("school"),
             "gmail": user.get("gmail"),
             "grade": user.get("grade"),
-            "subjects": user.get("subjects", [])
+            "subjects": user.get("subjects", []),
         }
         return {"userInfo": user_data}
+
+@app.post("/schedule-create")
+def create_schedule():
+    pass
+
+@app.post("/scope-modify")
+def modify_scope(
+    userID: str = Query(...),
+    subject_name: str = Query(...),
+    subject_publish: str = Query(...),
+    subject_workbook: str = Query(...),
+    new_scope: str = Query(...)
+):
+    if not userID:
+        return {"error": "UserID is required."}
+
+    user = users_collection.find_one({"userID": userID})
+    if not user:
+        return {"error": "UserID not found."}
+    subjects = user.get("subjects", [])
+    
+    for subject in subjects:
+        if (subject["name"] == subject_name and 
+            subject["publish"] == subject_publish and 
+            subject["workbook"] == subject_workbook):
+            subject["scope"] = new_scope
+            break
+    else:
+        return {"error": "Subject not found."}
+    
+    users_collection.update_one({"userID": userID}, {"$set": {"subjects": subjects}})
+
+@app.post("/focus-start")
+    
+
+# 1. 스케줄 짜주기
+
+# /schedule-create
+
+# send : {
+# 	when : 1 || 2 || 3 || 4 //week 1주, 2주, 3주, 4주....
+# 	subjects : [{
+# 		name : string;
+# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
+# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
+# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
+# 	},{
+# 		name : string;
+# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
+# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
+# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
+# 	}...]
+# }
+#
+#
+# response : 
+# {
+#   1720508580: {
+#     1: [
+#     {
+# 		name : string;
+# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
+# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
+# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
+# 	}
+#     , importance : string , isFinished : boolean
+#     ],
+#     2: [
+#     {
+# 		name : string;
+# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
+# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
+# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
+# 	}
+#     , importance : string , isFinished : boolean
+#     ],
+#   },
+#   ...
+#   1720508580: {
+#     1: [
+#     {
+# 		name : string;
+# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
+# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
+# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
+# 	}
+#     , importance : string , isFinished : boolean
+#     ],
+#     2: [
+#     {
+# 		name : string;
+# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
+# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
+# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
+# 	}
+#     , importance : string , isFinished : boolean
+#     ],
+#   },
+#   }
+# };
