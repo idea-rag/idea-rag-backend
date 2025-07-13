@@ -126,70 +126,49 @@ def modify_scope(
     users_collection.update_one({"userID": userID}, {"$set": {"subjects": subjects}})
 
 @app.post("/focus-start")
+def focus_start(focusTime = Query(...), 
+                userID: str = Query(...), 
+                measureTime: int = Query(0), 
+                whenTime: int = Query(0), 
+                whenDay: int = Query(0)):
+    if not userID:
+        return {"error": "UserID is required."}
     
+    user = users_collection.find_one({"userID": userID})
+    if not user:
+        return {"error": "UserID not found."}
+    data = {
+        "userID": userID,
+        "focusTime": focusTime,
+        "measureTime": measureTime,
+        "whenTime": whenTime,
+        "whenDay": whenDay,
+    }
 
-# 1. 스케줄 짜주기
+    db["focus"].insert_one(data)
 
-# /schedule-create
+    return {"message": "Focus started successfully!"}
 
-# send : {
-# 	when : 1 || 2 || 3 || 4 //week 1주, 2주, 3주, 4주....
-# 	subjects : [{
-# 		name : string;
-# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
-# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
-# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
-# 	},{
-# 		name : string;
-# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
-# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
-# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
-# 	}...]
-# }
-#
-#
-# response : 
-# {
-#   1720508580: {
-#     1: [
-#     {
-# 		name : string;
-# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
-# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
-# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
-# 	}
-#     , importance : string , isFinished : boolean
-#     ],
-#     2: [
-#     {
-# 		name : string;
-# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
-# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
-# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
-# 	}
-#     , importance : string , isFinished : boolean
-#     ],
-#   },
-#   ...
-#   1720508580: {
-#     1: [
-#     {
-# 		name : string;
-# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
-# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
-# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
-# 	}
-#     , importance : string , isFinished : boolean
-#     ],
-#     2: [
-#     {
-# 		name : string;
-# 		publish : <김해찬이 만든 문제집 딕셔너리 중 출판사>
-# 		workbook : <김해찬이 만든 문제집 딕셔너리 중 문제집 이름>
-# 		scope : <김해찬이 만든 문제집 딕셔너리 중 문제집 범위 설정>
-# 	}
-#     , importance : string , isFinished : boolean
-#     ],
-#   },
-#   }
-# };
+@app.post("/focus-feedback")
+def focus_feedback(
+    userID: str = Query(...),
+    whenTime: int = Query(...),
+    focus_data: dict = Query(...)
+):
+    if not userID or not focus_data:
+        return {"error": "UserID and focus data are required."}
+    
+    user = users_collection.find_one({"userID": userID})
+    if not user:
+        return {"error": "UserID not found."}
+    
+    focus_collection = db["focus"]
+    
+    for i in focus_data:
+        focus_collection.insert_one({userID,whenTime,{ 
+            "userID": userID,
+            "focusTime": focus_data[i].get("focusTime", 0),
+            "measureTime": focus_data[i].get("measureTime", 0)
+        }})
+
+    return {"message": "Focus feedback recorded successfully!"}
