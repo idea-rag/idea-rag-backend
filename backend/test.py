@@ -1,2 +1,3 @@
-import datetime
-print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+import os
+image_list = os.listdir("backend/find_dog_images")
+print(image_list)
