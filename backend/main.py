@@ -175,24 +175,6 @@ def focus_feedback(
     return {"message": "Focus feedback recorded successfully!"}
 
 @app.post("/neurofeedback_send")
-# send : [
-# 	when : number //YYYYMMDD형식 UTC+9
-# 	find_dog : {
-# 		correct : number;
-# 		error : number;
-# 		time : number //MMDD 형식
-# 	}, 
-# 	select_square: {
-# 		correct : number;
-# 		error : number;
-# 		time : number //MMDD 형식
-# 	}, 
-# 	order_action : {
-# 		correct : number;
-# 		error : number;
-# 		time : number //MMDD 형식
-# 	}
-# ]
 def neurofeedback_send(
     userID: str = Query(...),
     when: int = Query(...),
