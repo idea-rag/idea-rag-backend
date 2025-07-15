@@ -1,0 +1,28 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-backend
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - MONGO_URI=mongodb://root:password@rag-mongodb:27017/
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/find_dog_images:/app/backend/find_dog_images:ro
+
+  mongodb:
+    image: mongo:latest
+    container_name: rag-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: rag
+    volumes:
+      - ./script/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+
+volumes:
+  mongo_data:
