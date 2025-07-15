@@ -13,6 +13,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/find_dog_images:/app/backend/find_dog_images:ro
+    depends_on:
+      - mongodb
 
   mongodb:
     image: mongo:latest
