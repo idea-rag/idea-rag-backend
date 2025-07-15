@@ -1,4 +1,5 @@
-  {{
+[
+  {
     "grade": "middleschool-1",
     "publish": "미래엔 (MiraeN)",
     "workbook": "국어",
@@ -1792,4 +1793,4 @@
       "오늘날의 동아시아"
     ]
   }
-}
+]
