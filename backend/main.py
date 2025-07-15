@@ -1,234 +1,275 @@
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
-from fastapi import FastAPI, Query, HTTPException
-from typing import List, Optional
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import requests
 import os
-
 import uvicorn
+from pymongo.asynchronous.database import AsyncDatabase
+
+from database import lifespan, get_db
+from auth import AuthService, get_current_user, get_auth_service
+from exceptions import (
+    BaseHTTPException,
+    UserAlreadyExistsException,
+    UserNotFoundException,
+    InvalidPasswordException,
+    SubjectNotFoundException,
+    MissingRequiredFieldException,
+    FileNotFoundException,
+)
+from logger import create_logger
+from models import (
+    RegisterDTO,
+    LoginDTO,
+    ScopeModifyDTO,
+    FocusStartDTO,
+    FocusFeedbackDTO,
+    NeurofeedbackSendDTO,
+    FindDogImageLoadDTO,
+)
 
 load_dotenv()
 
-app = FastAPI()
-uri = os.getenv("MONGODB_URI")
-
-client = MongoClient(uri, server_api=ServerApi("1"))
-db = client["user"]
-users_collection = db["user_db"]
-try:
-    client.admin.command("ping")
-    print("Pinged your deployment. You successfully connected to MongoDB!")
-except Exception as e:
-    print(e)
+app = FastAPI(name="RAG API", lifespan=lifespan)
+logger = create_logger("app")
 
 
-@app.get("/")  # 기본 url
-def main():
+@app.exception_handler(BaseHTTPException)
+async def unknown_http_exception_handler(_request: Request, exc: BaseHTTPException):
+    logger.warning(f"Unknown HTTP Exception: {exc.detail}")
+    return JSONResponse(status_code=exc.status_code, content=exc.detail)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_request: Request, exc: HTTPException):
+    logger.warning(f"HTTP Exception: {exc.status_code} - {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": "HTTP_ERROR", "message": str(exc.detail), "details": {}},
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(_request: Request, exc: Exception):
+    logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "code": "INTERNAL_SERVER_ERROR",
+            "message": "Internal server error",
+            "details": {"error": str(exc)},
+        },
+    )
+
+
+@app.get("/")
+def main() -> dict:
     return {"message": "hello world!"}
 
 
 @app.post("/register")
-def register(
-    userID: str = Query(...),
-    name: Optional[str] = Query(None),
-    school: Optional[str] = Query(None),
-    gmail: Optional[str] = Query(None),
-    password: str = Query(...),
-    grade: Optional[str] = Query(None),
-    subject_name: List[str] = Query([]),
-    subject_publish: List[str] = Query([]),
-    subject_workbook: List[str] = Query([]),
-    subject_scope: List[str] = Query([]),
+async def register(
+    data: RegisterDTO,
+    db: AsyncDatabase = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
+    users_collection = db["user_db"]
+
+    if not data.userID or not data.password:
+        logger.warning(
+            f"Registration failed: Missing required fields for userID: {data.userID}"
+        )
+        raise MissingRequiredFieldException(["userID", "password"])
+
     subjects = [
         {"name": n, "publish": p, "workbook": w, "scope": s}
         for n, p, w, s in zip(
-            subject_name, subject_publish, subject_workbook, subject_scope
+            data.subject_name,
+            data.subject_publish,
+            data.subject_workbook,
+            data.subject_scope,
         )
     ]
+
+    hashed_password = auth_service.hash_password(data.password)
+
     data = {
-        "userID": userID,
-        "name": name,
-        "school": school,
-        "gmail": gmail,
-        "password": password,
-        "grade": grade,
+        "userID": data.userID,
+        "name": data.name,
+        "school": data.school,
+        "gmail": data.gmail,
+        "password": hashed_password,
+        "grade": data.grade,
         "subjects": subjects,
     }
-    if not data.get("userID") or not data.get("password"):
-        return {"error": "UserID and password are required."}
 
-    existing_user = users_collection.find_one({"userID": data.get("userID")})
+    existing_user = await users_collection.find_one({"userID": data.get("userID")})
 
     if existing_user:
-        return {"error": "UserID already exists."}
-    users_collection.insert_one(data)
+        logger.warning(
+            f"Registration failed: User already exists - userID: {data.userID}"
+        )
+        raise UserAlreadyExistsException(data.userID)
+
+    await users_collection.insert_one(data)
     return {"message": f"User {data.get('userID')} signed up successfully!"}
 
 
 @app.post("/login")
-def login(userID: str = Query(...), password: str = Query(None)):
-    if not userID or not password:
-        return {"error": "UserID and password are required."}
+async def login(
+    data: LoginDTO,
+    db: AsyncDatabase = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    users_collection = db["user_db"]
 
-    user = users_collection.find_one({"userID": userID})
+    if not data.userID or not data.password:
+        logger.warning(f"Login failed: Missing credentials for userID: {data.userID}")
+        raise MissingRequiredFieldException(["userID", "password"])
 
-    if user and user.get("password") == password:
-        return {"message": f"User {userID} signed in successfully!"}
-    elif user:
-        return {"error": "Invalid password."}
-    else:
-        return {"error": "UserID not found."}
+    user = await users_collection.find_one({"userID": data.userID})
+
+    if not user:
+        logger.warning(f"Login failed: User not found - userID: {data.userID}")
+        raise UserNotFoundException(data.userID)
+
+    if not auth_service.verify_password(data.password, user.get("password")):
+        logger.warning(f"Login failed: Invalid password for userID: {data.userID}")
+        raise InvalidPasswordException()
+
+    token = await auth_service.create_access_token(data.userID)
+    return {
+        "message": f"{data.userID} signed in successfully!",
+        "access_token": token,
+    }
 
 
 @app.get("/userInfo")
-def get_user_info(userID: str = Query(...)):
-    user = users_collection.find_one({"userID": userID})
-
-    if not user:
-        return {"error": "UserID not found."}
-    else:
-        user_data = {
-            "userID": user.get("userID"),
-            "name": user.get("name"),
-            "school": user.get("school"),
-            "gmail": user.get("gmail"),
-            "grade": user.get("grade"),
-            "subjects": user.get("subjects", []),
-        }
-        return {"userInfo": user_data}
+async def get_user_info(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    user_data = {
+        "userID": current_user.get("userID"),
+        "name": current_user.get("name"),
+        "school": current_user.get("school"),
+        "gmail": current_user.get("gmail"),
+        "grade": current_user.get("grade"),
+        "subjects": current_user.get("subjects", []),
+    }
+    return {"userInfo": user_data}
 
 
 @app.post("/schedule-create")
 def create_schedule():
-    pass
+    return NotImplementedError()
 
 
 @app.post("/scope-modify")
-def modify_scope(
-    userID: str = Query(...),
-    subject_name: str = Query(...),
-    subject_publish: str = Query(...),
-    subject_workbook: str = Query(...),
-    new_scope: str = Query(...),
+async def modify_scope(
+    data: ScopeModifyDTO,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncDatabase = Depends(get_db),
 ):
-    if not userID:
-        return {"error": "UserID is required."}
-
-    user = users_collection.find_one({"userID": userID})
-    if not user:
-        return {"error": "UserID not found."}
-    subjects = user.get("subjects", [])
-
+    user_id = current_user.get("userID")
+    users_collection = db["user_db"]
+    subjects = current_user.get("subjects", [])
     for subject in subjects:
         if (
-            subject["name"] == subject_name
-            and subject["publish"] == subject_publish
-            and subject["workbook"] == subject_workbook
+            subject["name"] == data.subject_name
+            and subject["publish"] == data.subject_publish
+            and subject["workbook"] == data.subject_workbook
         ):
-            subject["scope"] = new_scope
+            subject["scope"] = data.new_scope
             break
     else:
-        return {"error": "Subject not found."}
-
-    users_collection.update_one({"userID": userID}, {"$set": {"subjects": subjects}})
+        logger.warning(
+            f"Scope modification failed: Subject not found - userID: {user_id}, subject: {data.subject_name}"
+        )
+        raise SubjectNotFoundException(
+            data.subject_name, data.subject_publish, data.subject_workbook
+        )
+    await users_collection.update_one(
+        {"userID": user_id}, {"$set": {"subjects": subjects}}
+    )
+    return {"message": "Scope modified successfully!"}
 
 
 @app.post("/focus-start")
-def focus_start(
-    focusTime=Query(...),
-    userID: str = Query(...),
-    measureTime: int = Query(0),
-    whenTime: int = Query(0),
-    whenDay: int = Query(0),
+async def focus_start(
+    data: FocusStartDTO,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncDatabase = Depends(get_db),
 ):
-    if not userID:
-        return {"error": "UserID is required."}
-
-    user = users_collection.find_one({"userID": userID})
-    if not user:
-        return {"error": "UserID not found."}
+    user_id = current_user.get("userID")
+    focus_collection = db["focus"]
     data = {
-        "userID": userID,
-        "focusTime": focusTime,
-        "measureTime": measureTime,
-        "whenTime": whenTime,
-        "whenDay": whenDay,
+        "userID": user_id,
+        "focusTime": data.focusTime,
+        "measureTime": data.measureTime,
+        "whenTime": data.whenTime,
+        "whenDay": data.whenDay,
     }
-
-    db["focus"].insert_one(data)
-
+    await focus_collection.insert_one(data)
     return {"message": "Focus started successfully!"}
 
 
 @app.post("/focus-feedback")
-def focus_feedback(
-    userID: str = Query(...), whenTime: int = Query(...), focus_data: dict = Query(...)
+async def focus_feedback(
+    data: FocusFeedbackDTO,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncDatabase = Depends(get_db),
 ):
-    if not userID or not focus_data:
-        return {"error": "UserID and focus data are required."}
-
-    user = users_collection.find_one({"userID": userID})
-    if not user:
-        return {"error": "UserID not found."}
-
+    user_id = current_user.get("userID")
     focus_collection = db["focus"]
-
-    for i in focus_data:
-        focus_collection.insert_one(
+    if not data.focus_data:
+        logger.warning(f"Focus feedback failed: Missing data for userID: {user_id}")
+        raise MissingRequiredFieldException(["focus_data"])
+    for i in data.focus_data:
+        await focus_collection.insert_one(
             {
-                userID,
-                whenTime,
-                {
-                    "userID": userID,
-                    "focusTime": focus_data[i].get("focusTime", 0),
-                    "measureTime": focus_data[i].get("measureTime", 0),
-                },
+                "userID": user_id,
+                "whenTime": data.whenTime,
+                "focusTime": data.focus_data[i].get("focusTime", 0),
+                "measureTime": data.focus_data[i].get("measureTime", 0),
             }
         )
-
     return {"message": "Focus feedback recorded successfully!"}
 
 
 @app.post("/neurofeedback_send")
-def neurofeedback_send(
-    userID: str = Query(...),
-    when: int = Query(...),
-    find_dog: dict = Query(...),
-    select_square: dict = Query(...),
+async def neurofeedback_send(
+    data: NeurofeedbackSendDTO,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncDatabase = Depends(get_db),
 ):
-    if not userID or not when:
-        return {"error": "UserID and when are required."}
-
-    user = users_collection.find_one({"userID": userID})
-    if not user:
-        return {"error": "UserID not found."}
-
+    user_id = current_user.get("userID")
+    neurofeedback_collection = db["neurofeedback"]
+    if not data.when:
+        logger.warning(
+            f"Neurofeedback failed: Missing when parameter for userID: {user_id}"
+        )
+        raise MissingRequiredFieldException(["when"])
     neurofeedback_data = {
-        "userID": userID,
-        "when": when,
-        "find_dog": find_dog,
-        "select_square": select_square,
+        "userID": user_id,
+        "when": data.when,
+        "find_dog": data.find_dog,
+        "select_square": data.select_square,
     }
-
-    db["neurofeedback"].insert_one(neurofeedback_data)
-
+    await neurofeedback_collection.insert_one(neurofeedback_data)
     return {"message": "Neurofeedback data sent successfully!"}
 
 
 @app.get("/neurofeedback_load")
-def neurofeedback_load(userID: str = Query(...)):
-    if not userID:
-        return {"error": "UserID is required."}
+async def neurofeedback_load(
+    current_user: dict = Depends(get_current_user), db: AsyncDatabase = Depends(get_db)
+):
+    user_id = current_user.get("userID")
 
-    user = users_collection.find_one({"userID": userID})
-    if not user:
-        return {"error": "UserID not found."}
+    neurofeedback_collection = db["neurofeedback"]
 
-    neurofeedback_data = db["neurofeedback"].find({"userID": userID})
+    neurofeedback_data = neurofeedback_collection.find({"userID": user_id})
     data_list = []
-    for data in neurofeedback_data:
+    async for data in neurofeedback_data:
         data_list.append(
             {
                 "when": data.get("when"),
@@ -240,53 +281,50 @@ def neurofeedback_load(userID: str = Query(...)):
 
 
 @app.post("/find_dog_image_load")
-def find_dog_image_load(number: list = Query(...)):
-    IMAGE_DIR = os.getenv("Find_Dog_Image_URL")
-    UPLOAD_URL = os.getenv("UPLOAD_URL")
-    if not os.path.isdir(IMAGE_DIR):
-        raise HTTPException(
-            status_code=404, detail=f"이미지 디렉토리를 찾을 수 없습니다: {IMAGE_DIR}"
-        )
+def find_dog_image_load(data: FindDogImageLoadDTO):
 
-    image_list = sorted(os.listdir(IMAGE_DIR))  # 일관된 순서를 위해 정렬
+    IMAGE_DIRECTORY = os.getenv("Find_Dog_Image_URL")
+    UPLOAD_URL = os.getenv("UPLOAD_URL")
+
+    if not os.path.isdir(IMAGE_DIRECTORY):
+        logger.error(f"Image directory not found: {IMAGE_DIRECTORY}")
+        raise FileNotFoundException(IMAGE_DIRECTORY)
+
+    image_list = sorted(os.listdir(IMAGE_DIRECTORY))
 
     upload_results = []
     errors = []
 
-    for num in number:
+    for num in data.number:
         if 0 <= num < len(image_list):
             filename = image_list[num]
-            image_path = os.path.join(IMAGE_DIR, filename)
+            image_path = os.path.join(IMAGE_DIRECTORY, filename)
 
             try:
-                # 파일을 바이너리 모드로 열어서 POST 요청을 보냅니다.
                 with open(image_path, "rb") as image_file:
-                    files = {
-                        "file": (filename, image_file, "image/jpeg")
-                    }  # content-type은 실제 파일에 맞게 조정 가능
+                    files = {"file": (filename, image_file, "image/jpeg")}
 
-                    # requests 라이브러리를 사용해 자기 자신의 /upload/image/ 엔드포인트로 요청
                     response = requests.post(UPLOAD_URL, files=files)
-                    response.raise_for_status()  # 2xx 응답이 아니면 예외 발생
+                    response.raise_for_status()
 
                     upload_results.append(response.json())
 
             except FileNotFoundError:
-                errors.append(
-                    {"number": num, "error": f"파일을 찾을 수 없습니다: {image_path}"}
-                )
+                error_msg = f"파일을 찾을 수 없습니다: {image_path}"
+                logger.error(error_msg)
+                errors.append({"number": num, "error": error_msg})
             except requests.exceptions.RequestException as e:
-                errors.append(
-                    {"number": num, "filename": filename, "error": f"업로드 실패: {e}"}
-                )
+                error_msg = f"업로드 실패: {e}"
+                logger.error(f"Upload failed for {filename}: {e}")
+                errors.append({"number": num, "filename": filename, "error": error_msg})
         else:
-            errors.append(
-                {
-                    "number": num,
-                    "error": f"이미지 번호가 범위를 벗어났습니다. (사용 가능 범위: 0-{len(image_list)-1})",
-                }
-            )
+            error_msg = f"이미지 번호가 범위를 벗어났습니다. (사용 가능 범위: 0-{len(image_list)-1})"
+            logger.warning(f"Image number out of range: {num}")
+            errors.append({"number": num, "error": error_msg})
 
+    logger.info(
+        f"Find dog image load completed. Successes: {len(upload_results)}, Errors: {len(errors)}"
+    )
     return {"successes": upload_results, "errors": errors}
 
 
