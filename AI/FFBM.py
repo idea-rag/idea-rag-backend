@@ -8,9 +8,10 @@ import json
 load_dotenv()
 
 class FFBM:
-    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    def __init__(self):
+        self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    def get_ai_feedback(study_data_payload: dict) -> str:
+    def get_ai_feedback(study_data_payload: dict, self) -> str:
         prompt_message = f"""
         학생의 공부 상태 데이터입니다. 이 데이터를 바탕으로 학생을 격려하고 동기를 부여하는 따뜻한 메시지를 한국어로 작성해주세요.
         데이터는 JSON 형식입니다:
@@ -21,7 +22,7 @@ class FFBM:
             print("OpenAI API에 피드백을 요청합니다...")
 
             # OpenAI API 호출
-            response = client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "당신은 학생의 학습 데이터를 분석하고 격려해주는 친절한 스터디 코치입니다."},
