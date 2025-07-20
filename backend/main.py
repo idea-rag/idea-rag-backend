@@ -5,6 +5,7 @@ import requests
 import os
 import uvicorn
 from pymongo.asynchronous.database import AsyncDatabase
+import time
 
 from database import lifespan, get_db
 from auth import AuthService, get_current_user, get_auth_service
@@ -26,6 +27,8 @@ from models import (
     FocusFeedbackDTO,
     NeurofeedbackSendDTO,
     FindDogImageLoadDTO,
+    ScheduleDTO,
+    AIResponseDTO
 )
 
 load_dotenv()
@@ -160,8 +163,22 @@ async def get_user_info(
 
 
 @app.post("/schedule-create")
-def create_schedule():
-    return NotImplementedError()
+async def create_schedule(
+    data : ScheduleDTO,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncDatabase = Depends(get_db)
+):
+    user_id = current_user.get("userID")
+    schedule_collection = db["schedule"]
+
+    schedule_data = {
+        "userID": user_id,
+        "when": data.when,
+        "subjects": data.subjects,
+    }
+    await schedule_collection.insert_one(schedule_data)
+
+    return {"message": "Schedule created successfully!"}
 
 
 @app.post("/scope-modify")
@@ -326,6 +343,16 @@ def find_dog_image_load(data: FindDogImageLoadDTO):
         f"Find dog image load completed. Successes: {len(upload_results)}, Errors: {len(errors)}"
     )
     return {"successes": upload_results, "errors": errors}
+
+# @app.get("/AI")
+# async def ai_response(
+#     data : AIResponseDTO,
+#     current_user: dict = Depends(get_current_user),
+# ):
+#     user_id = current_user.get("userID")
+#
+# 합치고 해야 될 듯
+
 
 
 if __name__ == "__main__":
