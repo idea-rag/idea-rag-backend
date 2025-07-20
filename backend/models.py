@@ -46,3 +46,13 @@ class NeurofeedbackSendDTO(BaseModel):
 
 class FindDogImageLoadDTO(BaseModel):
     number: list[int]
+
+class ScheduleDTO(BaseModel):
+    when : int
+    subjects : list[dict]
+
+class AIResponseDTO(BaseModel):
+    userID: str
+    date : str
+    startingTime : int
+    currentSubject: dict
