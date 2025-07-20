@@ -96,7 +96,7 @@ class SDM:
 
             # LLM 응답 메시지 반환
             llm_message = response.choices[0].message.content
-            return llm_message
+            return json.load(llm_message)
 
         except Exception as e:
             print(f"[ERROR] API 요청 중 오류가 발생했습니다: {e}")
