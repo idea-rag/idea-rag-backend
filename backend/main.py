@@ -30,11 +30,17 @@ from models import (
     ScheduleDTO,
     AIResponseDTO
 )
+from AI.SDM import SDM
+from AI.FFBM import FFBM
 
 load_dotenv()
 
 app = FastAPI(name="RAG API", lifespan=lifespan)
 logger = create_logger("app")
+
+# SDM, FFBM 인스턴스 생성
+sdm = SDM()
+ffbm = FFBM()
 
 
 @app.exception_handler(BaseHTTPException)
@@ -178,7 +184,13 @@ async def create_schedule(
     }
     await schedule_collection.insert_one(schedule_data)
 
-    return {"message": "Schedule created successfully!"}
+    ai_schedule = sdm.get_ai_schedule({
+        "user_id": user_id,
+        "subjects": data.subjects,
+        "when": data.when
+    })
+
+    return {"message": "Schedule created successfully!", "ai_schedule": ai_schedule}
 
 
 @app.post("/scope-modify")
@@ -250,7 +262,13 @@ async def focus_feedback(
                 "measureTime": data.focus_data[i].get("measureTime", 0),
             }
         )
-    return {"message": "Focus feedback recorded successfully!"}
+        
+    ai_feedback = ffbm.get_ai_feedback({
+        "userID": user_id,
+        "focus_data": data.focus_data,
+        "whenTime": data.whenTime
+    })
+    return {"message": "Focus feedback recorded successfully!", "ai_feedback": ai_feedback}
 
 
 @app.post("/neurofeedback_send")
