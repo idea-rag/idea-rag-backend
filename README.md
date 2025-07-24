@@ -1,4 +1,4 @@
-# Idea RAG Backend
+# Fycus Backend
 
 형이야~
 
