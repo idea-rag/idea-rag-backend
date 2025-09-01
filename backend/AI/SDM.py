@@ -30,7 +30,7 @@ class SDM:
 
     def get_ai_schedule(self, study_data_payload: dict) -> dict:
         try:
-            dict_path = "../backend/dict.json"
+            dict_path = "../dict.json"
             with open(dict_path, 'r', encoding='utf-8') as f:
                 all_workbooks_data = json.load(f)
 

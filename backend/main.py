@@ -5,7 +5,6 @@ import requests
 import os
 import uvicorn
 from pymongo.asynchronous.database import AsyncDatabase
-import time
 
 from database import lifespan, get_db
 from auth import AuthService, get_current_user, get_auth_service
@@ -27,11 +26,10 @@ from models import (
     FocusFeedbackDTO,
     NeurofeedbackSendDTO,
     FindDogImageLoadDTO,
-    ScheduleDTO,
-    AIResponseDTO
+    ScheduleDTO
 )
-from AI.SDM import SDM
-from AI.FFBM import FFBM
+from backend.AI import SDM
+from backend.AI import FFBM
 
 load_dotenv()
 
