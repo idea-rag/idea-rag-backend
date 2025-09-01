@@ -39,4 +39,4 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 
 COPY . /app
 
-CMD ["uv", "run", "-m", "backend/main.py"]
+CMD ["uv", "run", "-m", "backend.main"]
