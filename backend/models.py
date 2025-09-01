@@ -5,13 +5,16 @@ class RegisterDTO(BaseModel):
     userID: str
     name: str
     school: str
-    gmail: str
+    grade : str
+    email: str
     password: str
-    grade: str
     subject_name: list[str]
     subject_publish: list[str]
-    subject_workbook: list[str]
-    subject_scope: list[str]
+    subject_BookList : list[str]
+    focus_Grade: list[str]
+    Subject_Module: list[dict]
+    Focus_Subject : str
+    WhatWeek : str
 
 
 class LoginDTO(BaseModel):

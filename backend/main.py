@@ -88,26 +88,22 @@ async def register(
         )
         raise MissingRequiredFieldException(["userID", "password"])
 
-    subjects = [
-        {"name": n, "publish": p, "workbook": w, "scope": s}
-        for n, p, w, s in zip(
-            data.subject_name,
-            data.subject_publish,
-            data.subject_workbook,
-            data.subject_scope,
-        )
-    ]
-
+    
     hashed_password = auth_service.hash_password(data.password)
 
     data = {
         "userID": data.userID,
         "name": data.name,
         "school": data.school,
-        "gmail": data.gmail,
-        "password": hashed_password,
         "grade": data.grade,
-        "subjects": subjects,
+        "email": data.email,
+        "password": hashed_password,
+        "subject_name": data.subject_name,
+        "subject_publish" : data.subject_publish,
+        "subject_BookList" : data.subject_BookList,
+        "Subject_Module" : data.Subject_Module,
+        "focus_Grade" : data.focus_Grade,
+        "WhatWeek" : data.WhatWeek
     }
 
     existing_user = await users_collection.find_one({"userID": data.get("userID")})
@@ -120,6 +116,7 @@ async def register(
 
     await users_collection.insert_one(data)
     return {"message": f"User {data.get('userID')} signed up successfully!"}
+
 
 
 @app.post("/login")
