@@ -28,8 +28,8 @@ from models import (
     FindDogImageLoadDTO,
     ScheduleDTO
 )
-from backend.AI import SDM
-from backend.AI import FFBM
+from AI.SDM import SDM
+from AI.FFBM import FFBM
 
 load_dotenv()
 
