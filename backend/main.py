@@ -34,6 +34,14 @@ from AI.FFBM import FFBM
 load_dotenv()
 
 app = FastAPI(name="RAG API", lifespan=lifespan)
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 모든 도메인 허용 (개발용)
+    allow_credentials=True,
+    allow_methods=["*"],  # 모든 HTTP 메소드 허용
+    allow_headers=["*"],  # 모든 헤더 허용
+)
 logger = create_logger("app")
 
 # SDM, FFBM 인스턴스 생성
