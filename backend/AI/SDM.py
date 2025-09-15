@@ -30,7 +30,12 @@ class SDM:
 
     def get_ai_schedule(self, study_data_payload: dict) -> dict:
         try:
-            dict_path = "../dict.json"
+            # Get the directory where the current script is located
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # Navigate to the backend directory and then to dict.json
+            dict_path = os.path.join(current_dir, '..', 'dict.json')
+            dict_path = os.path.normpath(dict_path)  # Normalize the path
+
             with open(dict_path, 'r', encoding='utf-8') as f:
                 all_workbooks_data = json.load(f)
 
@@ -182,4 +187,3 @@ if __name__ == "__main__":
         print("\n--- ✍️ AI 코치가 수정한 최종 스케줄 ---")
         print(json.dumps(modified_schedule, indent=2, ensure_ascii=False))
         print("------------------------------------")
-

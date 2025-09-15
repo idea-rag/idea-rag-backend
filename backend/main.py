@@ -174,25 +174,42 @@ async def get_user_info(
 
 @app.post("/schedule-create")
 async def create_schedule(
-    data : ScheduleDTO,
+    data: ScheduleDTO,
     current_user: dict = Depends(get_current_user),
     db: AsyncDatabase = Depends(get_db)
 ):
     user_id = current_user.get("userID")
     schedule_collection = db["schedule"]
 
-    schedule_data = {
+    # --- 데이터베이스 저장 로직 (기존과 동일) ---
+    # Convert Pydantic model to dict
+    schedule_data_to_db = {
         "userID": user_id,
         "when": data.when,
         "subjects": data.subjects,
     }
-    await schedule_collection.insert_one(schedule_data)
+    await schedule_collection.insert_one(schedule_data_to_db)
+    # ---------------------------------------------
 
-    ai_schedule = sdm.get_ai_schedule({
+    # [수정 1] AI 모듈에 전달할 payload를 올바른 형식으로 재구성합니다.
+    # 로그인된 사용자 정보에서 'grade'를 가져옵니다.
+    grade = current_user.get("grade")
+    if not grade:
+        # 사용자의 학년 정보가 없는 경우 예외 처리
+        raise HTTPException(status_code=400, detail="User grade information is missing.")
+
+    # [수정 2] sdm.get_ai_schedule가 요구하는 형식에 맞게 payload를 생성합니다.
+    payload_for_ai = {
         "user_id": user_id,
-        "subjects": data.subjects,
-        "when": data.when
-    })
+        "grade": grade,
+        "workbooks": data.subjects,  # API로 받은 subjects를 workbooks 키에 할당
+        "goal": "4주 동안의 학습 계획을 성공적으로 완수하고 싶습니다." # 우선 기본 목표를 설정 (아래 '추가 개선 제안' 참고)
+    }
+    
+    print(f"Sending to get_ai_schedule: {payload_for_ai}")  # Debug log
+    
+    # 수정된 payload로 AI 함수를 호출합니다.
+    ai_schedule = sdm.get_ai_schedule(payload_for_ai)
 
     return {"message": "Schedule created successfully!", "ai_schedule": ai_schedule}
 
