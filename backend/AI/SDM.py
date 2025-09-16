@@ -22,8 +22,8 @@ class SDM:
         for s_workbook in student_workbooks:
             for db_entry in all_workbooks_data:
                 if (db_entry.get('publish') == s_workbook.get('publish') and
-                        db_entry.get('subjects') == s_workbook.get('subjects') and
-                        db_entry.get('grade') == s_workbook.get('grade')):
+                        db_entry.get('workbook') == s_workbook.get('workbook') and  # 'subjects' → 'workbook'으로 변경
+                    db_entry.get('grade') == s_workbook.get('grade')):
                     relevant_data.append(db_entry)
                     break
         return relevant_data

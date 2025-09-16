@@ -85,9 +85,9 @@ def main() -> dict:
 
 @app.post("/register")
 async def register(
-    data: RegisterDTO,
-    db: AsyncDatabase = Depends(get_db),
-    auth_service: AuthService = Depends(get_auth_service),
+        data: RegisterDTO,
+        db: AsyncDatabase = Depends(get_db),
+        auth_service: AuthService = Depends(get_auth_service),
 ):
     users_collection = db["user_db"]
 
@@ -97,7 +97,6 @@ async def register(
         )
         raise MissingRequiredFieldException(["userID", "password"])
 
-    
     hashed_password = auth_service.hash_password(data.password)
 
     data = {
@@ -108,11 +107,11 @@ async def register(
         "email": data.email,
         "password": hashed_password,
         "subject_name": data.subject_name,
-        "subject_publish" : data.subject_publish,
-        "subject_BookList" : data.subject_BookList,
-        "Subject_Module" : data.Subject_Module,
-        "focus_Grade" : data.focus_Grade,
-        "WhatWeek" : data.WhatWeek
+        "subject_publish": data.subject_publish,
+        "subject_BookList": data.subject_BookList,
+        "Subject_Module": data.Subject_Module,
+        "focus_Grade": data.focus_Grade,
+        "WhatWeek": data.WhatWeek
     }
 
     existing_user = await users_collection.find_one({"userID": data.get("userID")})
@@ -127,12 +126,11 @@ async def register(
     return {"message": f"User {data.get('userID')} signed up successfully!"}
 
 
-
 @app.post("/login")
 async def login(
-    data: LoginDTO,
-    db: AsyncDatabase = Depends(get_db),
-    auth_service: AuthService = Depends(get_auth_service),
+        data: LoginDTO,
+        db: AsyncDatabase = Depends(get_db),
+        auth_service: AuthService = Depends(get_auth_service),
 ):
     users_collection = db["user_db"]
 
@@ -159,7 +157,7 @@ async def login(
 
 @app.get("/userInfo")
 async def get_user_info(
-    current_user: dict = Depends(get_current_user),
+        current_user: dict = Depends(get_current_user),
 ) -> dict:
     user_data = {
         "userID": current_user.get("userID"),
@@ -174,9 +172,9 @@ async def get_user_info(
 
 @app.post("/schedule-create")
 async def create_schedule(
-    data: ScheduleDTO,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncDatabase = Depends(get_db)
+        data: ScheduleDTO,
+        current_user: dict = Depends(get_current_user),
+        db: AsyncDatabase = Depends(get_db)
 ):
     user_id = current_user.get("userID")
     schedule_collection = db["schedule"]
@@ -187,6 +185,7 @@ async def create_schedule(
         "userID": user_id,
         "when": data.when,
         "subjects": data.subjects,
+        "goal": data.goal,
     }
     await schedule_collection.insert_one(schedule_data_to_db)
     # ---------------------------------------------
@@ -202,12 +201,13 @@ async def create_schedule(
     payload_for_ai = {
         "user_id": user_id,
         "grade": grade,
-        "workbooks": data.subjects,  # API로 받은 subjects를 workbooks 키에 할당
-        "goal": "4주 동안의 학습 계획을 성공적으로 완수하고 싶습니다." # 우선 기본 목표를 설정 (아래 '추가 개선 제안' 참고)
+        "subjects": data.subjects,  # API로 받은 subjects를 workbooks 키에 할당
+        "goal": data.goal,
+        "when": data.when
     }
-    
+
     print(f"Sending to get_ai_schedule: {payload_for_ai}")  # Debug log
-    
+
     # 수정된 payload로 AI 함수를 호출합니다.
     ai_schedule = sdm.get_ai_schedule(payload_for_ai)
 
@@ -216,18 +216,18 @@ async def create_schedule(
 
 @app.post("/scope-modify")
 async def modify_scope(
-    data: ScopeModifyDTO,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncDatabase = Depends(get_db),
+        data: ScopeModifyDTO,
+        current_user: dict = Depends(get_current_user),
+        db: AsyncDatabase = Depends(get_db),
 ):
     user_id = current_user.get("userID")
     users_collection = db["user_db"]
     subjects = current_user.get("subjects", [])
     for subject in subjects:
         if (
-            subject["name"] == data.subject_name
-            and subject["publish"] == data.subject_publish
-            and subject["workbook"] == data.subject_workbook
+                subject["name"] == data.subject_name
+                and subject["publish"] == data.subject_publish
+                and subject["workbook"] == data.subject_workbook
         ):
             subject["scope"] = data.new_scope
             break
@@ -246,9 +246,9 @@ async def modify_scope(
 
 @app.post("/focus-start")
 async def focus_start(
-    data: FocusStartDTO,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncDatabase = Depends(get_db),
+        data: FocusStartDTO,
+        current_user: dict = Depends(get_current_user),
+        db: AsyncDatabase = Depends(get_db),
 ):
     user_id = current_user.get("userID")
     focus_collection = db["focus"]
@@ -265,9 +265,9 @@ async def focus_start(
 
 @app.post("/focus-feedback")
 async def focus_feedback(
-    data: FocusFeedbackDTO,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncDatabase = Depends(get_db),
+        data: FocusFeedbackDTO,
+        current_user: dict = Depends(get_current_user),
+        db: AsyncDatabase = Depends(get_db),
 ):
     user_id = current_user.get("userID")
     focus_collection = db["focus"]
@@ -283,7 +283,7 @@ async def focus_feedback(
                 "measureTime": data.focus_data[i].get("measureTime", 0),
             }
         )
-        
+
     ai_feedback = ffbm.get_ai_feedback({
         "userID": user_id,
         "focus_data": data.focus_data,
@@ -294,9 +294,9 @@ async def focus_feedback(
 
 @app.post("/neurofeedback_send")
 async def neurofeedback_send(
-    data: NeurofeedbackSendDTO,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncDatabase = Depends(get_db),
+        data: NeurofeedbackSendDTO,
+        current_user: dict = Depends(get_current_user),
+        db: AsyncDatabase = Depends(get_db),
 ):
     user_id = current_user.get("userID")
     neurofeedback_collection = db["neurofeedback"]
@@ -317,7 +317,7 @@ async def neurofeedback_send(
 
 @app.get("/neurofeedback_load")
 async def neurofeedback_load(
-    current_user: dict = Depends(get_current_user), db: AsyncDatabase = Depends(get_db)
+        current_user: dict = Depends(get_current_user), db: AsyncDatabase = Depends(get_db)
 ):
     user_id = current_user.get("userID")
 
@@ -338,7 +338,6 @@ async def neurofeedback_load(
 
 @app.post("/find_dog_image_load")
 def find_dog_image_load(data: FindDogImageLoadDTO):
-
     IMAGE_DIRECTORY = os.getenv("Find_Dog_Image_URL")
     UPLOAD_URL = os.getenv("UPLOAD_URL")
 
@@ -374,7 +373,7 @@ def find_dog_image_load(data: FindDogImageLoadDTO):
                 logger.error(f"Upload failed for {filename}: {e}")
                 errors.append({"number": num, "filename": filename, "error": error_msg})
         else:
-            error_msg = f"이미지 번호가 범위를 벗어났습니다. (사용 가능 범위: 0-{len(image_list)-1})"
+            error_msg = f"이미지 번호가 범위를 벗어났습니다. (사용 가능 범위: 0-{len(image_list) - 1})"
             logger.warning(f"Image number out of range: {num}")
             errors.append({"number": num, "error": error_msg})
 
@@ -382,6 +381,7 @@ def find_dog_image_load(data: FindDogImageLoadDTO):
         f"Find dog image load completed. Successes: {len(upload_results)}, Errors: {len(errors)}"
     )
     return {"successes": upload_results, "errors": errors}
+
 
 # @app.get("/AI")
 # async def ai_response(
@@ -391,7 +391,6 @@ def find_dog_image_load(data: FindDogImageLoadDTO):
 #     user_id = current_user.get("userID")
 #
 # 합치고 해야 될 듯
-
 
 
 if __name__ == "__main__":
