@@ -5,6 +5,7 @@ import json
 import pathlib
 import time
 import re
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -50,6 +51,7 @@ class SDM:
 
             relevant_data_str = json.dumps(relevant_workbook_data, ensure_ascii=False, indent=2)
             student_data_str = json.dumps(study_data_payload, ensure_ascii=False, indent=2)
+            current_date = datetime.now().strftime("%Y-%m-%d")
 
             prompt_message = f"""
             당신은 전문 학습 컨설턴트입니다. 학생의 데이터와 제공된 참고 문제집 데이터를 바탕으로, 구체적이고 실천 가능한 제시된 주 만큼, 만일 제시되지 않았다면 4주간의 학습 계획표를 작성해주세요. 주의 수는 when으로 나타내집니다.
@@ -69,11 +71,11 @@ class SDM:
 
             [출력 JSON 형식]
             {{
-              "<타임스탬프>": {{
+              "{current_date}": {{
                 "1": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ],
                 "2": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ],
                 "3": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ],
-                "4.": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ]
+                "4": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ]
               }}
             }}
             """
