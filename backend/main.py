@@ -256,7 +256,8 @@ async def focus_start(
         "userID": user_id,
         "focusTime": data.focusTime,
         "measureTime": data.measureTime,
-        "whenTime": data.whenTime,
+        "startTime": data.startTime,
+        "endTime": data.endTime,
         "whenDay": data.whenDay,
     }
     await focus_collection.insert_one(data)

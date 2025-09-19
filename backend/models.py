@@ -33,7 +33,8 @@ class ScopeModifyDTO(BaseModel):
 class FocusStartDTO(BaseModel):
     focusTime: str
     measureTime: int = 0
-    whenTime: int = 0
+    startTime: int  # Unix timestamp for start time
+    endTime: int    # Unix timestamp for end time
     whenDay: int = 0
 
 
