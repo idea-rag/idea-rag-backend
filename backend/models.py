@@ -24,9 +24,7 @@ class LoginDTO(BaseModel):
 
 
 class ScopeModifyDTO(BaseModel):
-    subject_name: str
-    subject_publish: str
-    subject_workbook: str
+    original_schedule: Any
     new_scope: str
 
 

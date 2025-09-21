@@ -1,10 +1,22 @@
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from AI.SDM import SDM
+import logging
 import requests
 import os
 import uvicorn
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 from pymongo.asynchronous.database import AsyncDatabase
 
 from database import lifespan, get_db
@@ -220,28 +232,68 @@ async def modify_scope(
         current_user: dict = Depends(get_current_user),
         db: AsyncDatabase = Depends(get_db),
 ):
-    user_id = current_user.get("userID")
-    users_collection = db["user_db"]
-    subjects = current_user.get("subjects", [])
-    for subject in subjects:
-        if (
-                subject["name"] == data.subject_name
-                and subject["publish"] == data.subject_publish
-                and subject["workbook"] == data.subject_workbook
-        ):
-            subject["scope"] = data.new_scope
-            break
-    else:
-        logger.warning(
-            f"Scope modification failed: Subject not found - userID: {user_id}, subject: {data.subject_name}"
+    try:
+        # 1. Initialize SDM instance
+        sdm = SDM()
+        
+        # 2. Get the original schedule from the request
+        original_schedule = data.original_schedule
+        if not isinstance(original_schedule, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="original_schedule must be a valid JSON object"
+            )
+        
+        # 3. Prepare modification request
+        modification_request = {
+            "request": data.new_scope
+        }
+        
+        # 4. Call SDM to modify the schedule
+        logger.info(f"Modifying schedule for user {current_user.get('userID')}")
+        modified_schedule = sdm.modify_ai_schedule(
+            original_schedule=original_schedule,
+            modification_request=modification_request
         )
-        raise SubjectNotFoundException(
-            data.subject_name, data.subject_publish, data.subject_workbook
+        
+        # 5. Check for errors in the response
+        if "error" in modified_schedule:
+            logger.error(f"SDM modification failed: {modified_schedule['error']}")
+            raise HTTPException(
+                status_code=400,
+                detail=modified_schedule["error"]
+            )
+            
+        # 6. Update user's schedule in the database
+        user_id = current_user.get("userID")
+        users_collection = db["user_db"]
+        
+        update_result = await users_collection.update_one(
+            {"userID": user_id},
+            {"$set": {"schedule": modified_schedule}}
         )
-    await users_collection.update_one(
-        {"userID": user_id}, {"$set": {"subjects": subjects}}
-    )
-    return {"message": "Scope modified successfully!"}
+        
+        if update_result.modified_count == 0:
+            logger.warning(f"No documents were updated for user {user_id}")
+            
+        logger.info(f"Successfully updated schedule for user {user_id}")
+        
+        return {
+            "success": True,
+            "message": "Schedule modified successfully",
+            "modified_schedule": modified_schedule
+        }
+        
+    except HTTPException as he:
+        # Re-raise HTTP exceptions
+        raise he
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in modify_scope: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while processing your request"
+        )
 
 
 @app.post("/focus-start")
