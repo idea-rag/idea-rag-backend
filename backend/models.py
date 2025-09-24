@@ -29,16 +29,19 @@ class ScopeModifyDTO(BaseModel):
 
 
 class FocusStartDTO(BaseModel):
-    focusTime: str
-    measureTime: int = 0
-    startTime: int  # Unix timestamp for start time
-    endTime: int    # Unix timestamp for end time
-    whenDay: int = 0
+    focusTime: int  # 집중 시간 (분 단위)
+    measureTime: int  # 측정 시간 (분 단위)
+    whenDay: str    # 날짜 (YYYY-MM-DD 형식)
+    timeSlot: str   # 시간대 (예: '10-20'은 10시 20분대를 의미)
 
+
+class TimeSlotData(BaseModel):
+    measureTime: int
+    focusTime: int
 
 class FocusFeedbackDTO(BaseModel):
-    whenTime: int
-    focus_data: Dict[str, Any]
+    whenDay: str  # YYYY-MM-DD format
+    timeSlots: Dict[str, TimeSlotData]  # Key is time slot like "10-20"
 
 
 class NeurofeedbackSendDTO(BaseModel):

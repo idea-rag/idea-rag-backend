@@ -296,6 +296,39 @@ async def modify_scope(
         )
 
 
+@app.get("/focus-data")
+async def get_focus_data(
+        when_day: str,
+        current_user: dict = Depends(get_current_user),
+        db: AsyncDatabase = Depends(get_db),
+):
+    user_id = current_user.get("userID")
+    focus_collection = db["focus"]
+    
+    # 해당 날짜의 문서 조회
+    focus_data = await focus_collection.find_one(
+        {"userID": user_id, "whenDay": when_day},
+        {"_id": 0}  # _id 필드 제외
+    )
+    
+    if not focus_data:
+        return {
+            "message": "No data found for the specified date",
+            "data": {
+                "userID": user_id,
+                "whenDay": when_day,
+                "timeSlots": {},
+                "totalMeasureTime": 0,
+                "totalFocusTime": 0
+            }
+        }
+    
+    return {
+        "message": "Focus data retrieved successfully",
+        "data": focus_data
+    }
+
+
 @app.post("/focus-start")
 async def focus_start(
         data: FocusStartDTO,
@@ -304,16 +337,53 @@ async def focus_start(
 ):
     user_id = current_user.get("userID")
     focus_collection = db["focus"]
-    data = {
-        "userID": user_id,
-        "focusTime": data.focusTime,
+    
+    # 기존 문서 조회
+    existing_doc = await focus_collection.find_one({"userID": user_id, "whenDay": data.whenDay})
+    
+    # 시간대별 데이터 생성
+    time_slot_data = {
         "measureTime": data.measureTime,
-        "startTime": data.startTime,
-        "endTime": data.endTime,
-        "whenDay": data.whenDay,
+        "focusTime": data.focusTime
     }
-    await focus_collection.insert_one(data)
-    return {"message": "Focus started successfully!"}
+    
+    if existing_doc:
+        # 기존 문서가 있으면 시간대별 데이터 업데이트
+        update_data = {}
+        update_data[f"timeSlots.{data.timeSlot}"] = time_slot_data
+        
+        await focus_collection.update_one(
+            {"userID": user_id, "whenDay": data.whenDay},
+            {
+                "$set": update_data,
+                "$inc": {
+                    "totalMeasureTime": data.measureTime,
+                    "totalFocusTime": data.focusTime
+                }
+            },
+            upsert=True
+        )
+    else:
+        # 새 문서 생성
+        new_doc = {
+            "userID": user_id,
+            "whenDay": data.whenDay,
+            "timeSlots": {
+                data.timeSlot: time_slot_data
+            },
+            "totalMeasureTime": data.measureTime,
+            "totalFocusTime": data.focusTime
+        }
+        await focus_collection.insert_one(new_doc)
+    
+    return {
+        "message": "Focus data saved successfully!",
+        "data": {
+            "userID": user_id,
+            "whenDay": data.whenDay,
+            data.timeSlot: time_slot_data
+        }
+    }
 
 
 @app.post("/focus-feedback")
@@ -324,25 +394,55 @@ async def focus_feedback(
 ):
     user_id = current_user.get("userID")
     focus_collection = db["focus"]
-    if not data.focus_data:
-        logger.warning(f"Focus feedback failed: Missing data for userID: {user_id}")
-        raise MissingRequiredFieldException(["focus_data"])
-    for i in data.focus_data:
-        await focus_collection.insert_one(
-            {
-                "userID": user_id,
-                "whenTime": data.whenTime,
-                "focusTime": data.focus_data[i].get("focusTime", 0),
-                "measureTime": data.focus_data[i].get("measureTime", 0),
-            }
-        )
+    
+    if not data.timeSlots:
+        logger.warning(f"Focus feedback failed: Missing timeSlots for userID: {user_id}")
+        raise MissingRequiredFieldException(["timeSlots"])
 
-    ai_feedback = ffbm.get_ai_feedback({
-        "userID": user_id,
-        "focus_data": data.focus_data,
-        "whenTime": data.whenTime
-    })
-    return {"message": "Focus feedback recorded successfully!", "ai_feedback": ai_feedback}
+    # Prepare focus data for database and FFBM
+    focus_data = {
+        "whenDay": data.whenDay,
+        "timeSlots": {},
+        "totalMeasureTime": 0,
+        "totalFocusTime": 0
+    }
+
+    # Process each time slot
+    for time_slot, slot_data in data.timeSlots.items():
+        measure_time = slot_data.get("measureTime", 0)
+        focus_time = slot_data.get("focusTime", 0)
+        
+        # Save to database
+        await focus_collection.insert_one({
+            "userID": user_id,
+            "whenDay": data.whenDay,
+            "timeSlot": time_slot,
+            "focusTime": focus_time,
+            "measureTime": measure_time,
+            "timestamp": datetime.datetime.now()
+        })
+        
+        # Update focus data for FFBM
+        focus_data["timeSlots"][time_slot] = {
+            "measureTime": measure_time,
+            "focusTime": focus_time
+        }
+        focus_data["totalMeasureTime"] += measure_time
+        focus_data["totalFocusTime"] += focus_time
+
+    # Get AI feedback with the formatted data
+    ai_feedback = ffbm.get_ai_feedback(
+        study_data_payload={
+            "userID": user_id,
+            "date": data.whenDay
+        },
+        focus_data_payload=focus_data
+    )
+    
+    return {
+        "message": "Focus feedback recorded successfully!", 
+        "ai_feedback": ai_feedback
+    }
 
 
 @app.post("/neurofeedback_send")
