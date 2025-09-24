@@ -417,11 +417,10 @@ async def focus_feedback(
             "userID": user_id,
             "whenDay": data.whenDay,
             "timeSlot": time_slot,
-            "focusTime": focus_time,
             "measureTime": measure_time,
-            "timestamp": datetime.datetime.now()
+            "focusTime": focus_time,
         })
-        
+
         # Update focus data for FFBM
         focus_data["timeSlots"][time_slot] = {
             "measureTime": measure_time,
@@ -430,12 +429,9 @@ async def focus_feedback(
         focus_data["totalMeasureTime"] += measure_time
         focus_data["totalFocusTime"] += focus_time
 
-    # Get AI feedback with the formatted data
+    # Get AI feedback with both study and focus data
     ai_feedback = ffbm.get_ai_feedback(
-        study_data_payload={
-            "userID": user_id,
-            "date": data.whenDay
-        },
+        study_data_payload=data.studyData,  # 프론트엔드에서 전달받은 studyData 전달
         focus_data_payload=focus_data
     )
     

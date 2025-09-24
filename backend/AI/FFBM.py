@@ -12,39 +12,76 @@ class FFBM:
     def get_ai_feedback(self, study_data_payload: dict, focus_data_payload: dict = None) -> str:
         # Prepare the base prompt for study data
         prompt_message = """
-        학생의 공부 상태 데이터가 주어집니다. 이 데이터를 바탕으로 학생을 격려하고 동기를 부여하는 따뜻한 메시지를 한국어로 작성해주세요.
-        2번 줄바꿈은 사용하지 말고, 이모티콘도 자제해 주세요.
-        학생을 위해 따뜻한 한마디를 건네주세요.
-        자신을 지칭하는 말을 자제해주세요.
-        학생의 의지를 돋구고, 자존심을 세워줄 피드백이 필요합니다.
+        학생의 공부 상태 데이터를 바탕으로 학생을 격려하고 동기를 부여하는 따뜻한 메시지를 한국어로 작성해주세요.
+        반드시 다음 사항을 지켜주세요:
+        1. 줄바꿈 문자(\\n)를 절대 사용하지 마세요. 문장은 마침표(.)로 끝내고 한 줄로 이어서 작성하세요.
+        2. 이모티콘을 사용하지 마세요.
+        3. "AI", "저", "제가"와 같이 자신을 지칭하는 말을 사용하지 마세요.
+        4. 학생의 이름 대신 "학생" 또는 "여러분"과 같은 호칭을 사용하세요.
+        5. 학생의 의지를 돋구고, 자존심을 세워줄 수 있는 긍정적인 피드백을 주세요.
         """
 
         # Add study data to prompt in a natural way
-        prompt_message += f"\n\n님의 학습 데이터를 살펴보니 다음과 같습니다: {json.dumps(study_data_payload, ensure_ascii=False)}"
+        study_info = []
+        if 'subject' in study_data_payload:
+            study_info.append(f"과목: {study_data_payload['subject']}")
+        if 'topic' in study_data_payload:
+            study_info.append(f"주제: {study_data_payload['topic']}")
+        if 'goal' in study_data_payload:
+            study_info.append(f"목표: {study_data_payload['goal']}")
         
+        if study_info:
+            prompt_message += f" 학생의 학습 정보: {', '.join(study_info)}."
+
         # Add focus data to prompt if available
         if focus_data_payload:
-            # Calculate focus rate
-            total_measure = focus_data_payload.get('totalMeasureTime', 1)
-            total_focus = focus_data_payload.get('totalFocusTime', 0)
+            # 시간대별 집중도 분석
+            time_slots = focus_data_payload.get('timeSlots', {})
+            total_measure = 0
+            total_focus = 0
+            
+            # 시간대별 집중도 계산
+            time_analyses = []
+            for time_range, data in time_slots.items():
+                slot_measure = data.get('measureTime', 0)  # 분 단위
+                slot_focus = data.get('focusTime', 0)      # 분 단위
+                
+                # 시간대 파싱 (예: '14-30' -> '14시 30분')
+                try:
+                    hour, minute = map(int, time_range.split('-'))
+                    time_display = f"{hour}시 {minute}분대"
+                except (ValueError, AttributeError):
+                    time_display = time_range
+                
+                slot_rate = (slot_focus / slot_measure * 100) if slot_measure > 0 else 0
+                time_analyses.append({
+                    'time': time_display,
+                    'measure': slot_measure,
+                    'focus': slot_focus,
+                    'rate': slot_rate
+                })
+                
+                total_measure += slot_measure
+                total_focus += slot_focus
+            
+            # 전체 집중도 계산 (분 단위)
             focus_rate = (total_focus / total_measure * 100) if total_measure > 0 else 0
             
-            # Build focus data description
-            focus_desc = f"\n\n{focus_data_payload.get('whenDay')}의 집중도 데이터를 확인해보니, "
-            focus_desc += f"총 {total_measure}분 동안 공부하시는 동안 {total_focus}분 동안 집중하셨네요. "
+            # 피드백 문구 생성
+            focus_desc = f"{focus_data_payload.get('whenDay')}의 집중도 분석 결과, "
+            focus_desc += f"총 {total_measure}분 동안 공부하시는 동안 {total_focus}분 동안 집중하셨습니다. "
             focus_desc += f"전체 집중도는 {focus_rate:.1f}%로, "
             
-            # Add time slot analysis
-            time_slots = focus_data_payload.get('timeSlots', {})
-            if time_slots:
+            # 시간대별 분석 추가
+            if time_analyses:
                 focus_desc += "시간대별로는 "
                 time_descriptions = []
-                for time_range, data in time_slots.items():
-                    slot_measure = data.get('measureTime', 0)
-                    slot_focus = data.get('focusTime', 0)
-                    slot_rate = (slot_focus / slot_measure * 100) if slot_measure > 0 else 0
-                    time_descriptions.append(f"{time_range}시에는 {slot_rate:.1f}%")
-                focus_desc += ", ".join(time_descriptions) + "의 집중도를 보였습니다. "
+                for analysis in time_analyses:
+                    time_descriptions.append(
+                        f"{analysis['time']}에는 {analysis['focus']}분 집중"
+                        f"(총 {analysis['measure']}분 중 {analysis['rate']:.1f}%)"
+                    )
+                focus_desc += ", ".join(time_descriptions) + "의 집중 패턴을 보였습니다. "
             
             # Add focus analysis
             if focus_rate >= 70:
@@ -56,16 +93,28 @@ class FFBM:
                 focus_desc += "집중력은 훈련을 통해 점점 좋아질 거예요."
             
             prompt_message += focus_desc
+
         try:
             print("OpenAI API에 피드백을 요청합니다...")
             response = self.client.chat.completions.create(
-                model="gpt-4.1",
+                model="gpt-4",
                 messages=[
-                    {"role": "system", "content": '''당신은 학생의 학습 데이터를 분석하고 격려해주는 친절한 스터디 코치입니다.'''},
-                    {"role": "user", "content": prompt_message}
-                ]
+                    {
+                        "role": "system", 
+                        "content": "당신은 학생의 학습 데이터를 분석하고 격려해주는 스터디 코치입니다. 모든 응답은 한 줄로 자연스럽게 이어지게 해주세요."
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt_message
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=300
             )
+            # 응답에서 줄바꿈 문자 제거
             llm_message = response.choices[0].message.content
+            llm_message = ' '.join(llm_message.split())  # 모든 공백을 단일 공백으로 변환
+            llm_message = llm_message.replace('\n', ' ').replace('\r', '')  # 남아있는 개행 문자 제거
             return llm_message
         except Exception as e:
             print(f"API 요청 중 오류가 발생했습니다: {e}")
@@ -73,35 +122,33 @@ class FFBM:
 
 
 if __name__ == "__main__":
-    ffbm_instance = FFBM()
-    sample_study_data = {
-              "schedule": {
-                "2023-09-22": [
-                  {
-                    "name": "할 일 내용",
-                    "importance": 3,
-                    "isChecked": False,
-                    "whatDay": "금요일"
-                  },
-                  {
-                    "name": "다른 할 일",
-                    "importance": 1,
-                    "isChecked": True,
-                    "whatDay": "금요일"
-                  }
-                ],
-                "2023-09-23": [
-                  {
-                    "name": "주말 할 일",
-                    "importance": 2,
-                    "isChecked": False,
-                    "whatDay": "토요일"
-                  }
-                ]
-              }
+    ffbm = FFBM()
+    
+    # 테스트용 데이터
+    test_study_data = {
+        "subject": "수학",
+        "topic": "삼각함수",
+        "goal": "삼각함수의 기본 개념 이해하기",
+        "studyTime": 45
     }
-
-
-    ai_response = ffbm_instance.get_ai_feedback(sample_study_data)
-
-    print(ai_response)
+    
+    test_focus_data = {
+        "whenDay": "2023-09-24",
+        "timeSlots": {
+            "14": {"measureTime": 300, "focusTime": 240},
+            "15": {"measureTime": 300, "focusTime": 180}
+        },
+        "totalMeasureTime": 600,
+        "totalFocusTime": 420
+    }
+    
+    # 피드백 요청 테스트
+    feedback = ffbm.get_ai_feedback(
+        study_data_payload=test_study_data,
+        focus_data_payload=test_focus_data
+    )
+    
+    print("\n생성된 피드백:")
+    print("-" * 50)
+    print(feedback)
+    print("-" * 50)

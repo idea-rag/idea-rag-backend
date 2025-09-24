@@ -41,8 +41,8 @@ class TimeSlotData(BaseModel):
 
 class FocusFeedbackDTO(BaseModel):
     whenDay: str  # YYYY-MM-DD format
-    timeSlots: Dict[str, TimeSlotData]  # Key is time slot like "10-20"
-
+    timeSlots: Dict[str, Dict[str, int]]  # Key is time slot like "10-20"
+    studyData: Dict[str, Any]  # 추가된 필드: 학습 데이터
 
 class NeurofeedbackSendDTO(BaseModel):
     when: int
@@ -63,5 +63,4 @@ class ScheduleDTO(BaseModel):
 class AIResponseDTO(BaseModel):
     userID: str
     date: str
-    startingTime: int
     currentSubject: Dict[str, Any]
