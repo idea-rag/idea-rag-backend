@@ -7,6 +7,8 @@ import logging
 import requests
 import os
 import uvicorn
+import json
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -226,73 +228,210 @@ async def create_schedule(
     return {"message": "Schedule created successfully!", "ai_schedule": ai_schedule}
 
 
-@app.post("/scope-modify")
-async def modify_scope(
-        data: ScopeModifyDTO,
+@app.post("/schedule-modify")
+async def modify_schedule(
+        data: dict,
         current_user: dict = Depends(get_current_user),
         db: AsyncDatabase = Depends(get_db),
 ):
+    """
+    기존 스케줄과 사용자 피드백을 받아 새로운 스케줄을 생성합니다.
+    
+    요청 데이터 형식:
+    {
+        "existing_schedule": {...},  # 기존 스케줄 데이터
+        "feedback": "사용자 피드백 텍스트"  # 수정 요청사항
+    }
+    """
     try:
-        # 1. Initialize SDM instance
-        sdm = SDM()
+        user_id = current_user.get("userID")
+        grade = current_user.get("grade")
         
-        # 2. Get the original schedule from the request
-        original_schedule = data.original_schedule
-        if not isinstance(original_schedule, dict):
+        # 1. 필수 데이터 검증
+        existing_schedule = data.get("existing_schedule")
+        feedback = data.get("feedback", "")
+        
+        if not existing_schedule:
             raise HTTPException(
                 status_code=400,
-                detail="original_schedule must be a valid JSON object"
+                detail="기존 스케줄 데이터(existing_schedule)가 필요합니다."
             )
         
-        # 3. Prepare modification request
-        modification_request = {
-            "request": data.new_scope
+        if not feedback.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="수정 요청사항(feedback)이 필요합니다."
+            )
+        
+        # 2. 학생 데이터 구성
+        student_data = {
+            "user_id": user_id,
+            "grade": grade,
+            "name": current_user.get("name", ""),
+            "school": current_user.get("school", "")
         }
         
-        # 4. Call SDM to modify the schedule
-        logger.info(f"Modifying schedule for user {current_user.get('userID')}")
+        # 3. dict.json에서 문제집 데이터 로드
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            dict_path = os.path.join(current_dir, 'dict.json')
+            dict_path = os.path.normpath(dict_path)
+            logger.info(f"dict.json 경로: {dict_path}")  # 디버깅용 로그 추가
+            
+            with open(dict_path, 'r', encoding='utf-8') as f:
+                all_workbooks_data = json.load(f)
+                
+            logger.info(f"문제집 데이터 로드 완료: {len(all_workbooks_data)}개 항목")
+                
+        except FileNotFoundError:
+            logger.error(f"dict.json 파일을 찾을 수 없습니다: {dict_path}")
+            raise HTTPException(
+                status_code=500,
+                detail="문제집 데이터를 로드할 수 없습니다."
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"dict.json 파싱 오류: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="문제집 데이터 형식이 올바르지 않습니다."
+            )
+        
+        # 4. 기존 스케줄에서 사용된 문제집 정보 추출
+        relevant_workbooks = []
+        try:
+            # 기존 스케줄 구조 로깅 (디버깅용)
+            logger.info(f"기존 스케줄 구조: {json.dumps(existing_schedule, ensure_ascii=False, indent=2)[:500]}...")
+            
+            # 사용 가능한 문제집 목록 로깅 (디버깅용)
+            logger.info(f"사용 가능한 학년: {grade}의 문제집 목록:")
+            available_workbooks = [f"{wb.get('publish')} - {wb.get('workbook')}" 
+                                for wb in all_workbooks_data 
+                                if wb.get('grade') == grade]
+            logger.info("\n".join(available_workbooks))
+            
+            # 기존 스케줄에서 사용된 문제집들을 찾아서 관련 데이터 추출
+            found_workbooks = set()  # 중복 제거를 위해 set 사용
+            
+            # existing_schedule을 순회하며 문제집 정보 수집
+            def collect_workbooks(data):
+                if isinstance(data, dict):
+                    # 현재 레벨에서 publish와 workbook이 있는지 확인
+                    if 'publish' in data and 'workbook' in data:
+                        publish = data['publish']
+                        workbook = data['workbook']
+                        if publish and workbook:
+                            found_workbooks.add((publish, workbook))
+                    # 모든 값에 대해 재귀적으로 탐색
+                    for value in data.values():
+                        collect_workbooks(value)
+                elif isinstance(data, list):
+                    for item in data:
+                        collect_workbooks(item)
+            
+            # 문제집 정보 수집 실행
+            collect_workbooks(existing_schedule)
+            
+            # 찾은 문제집 정보 로깅
+            logger.info(f"스케줄에서 찾은 문제집 정보: {found_workbooks}")
+            
+            # dict.json에서 해당하는 문제집 데이터 찾기
+            for publish, workbook in found_workbooks:
+                logger.info(f"\n찾고 있는 문제집 - 출판사: '{publish}', 문제집: '{workbook}', 학년: '{grade}'")
+                
+                # 정확히 일치하는 문제집 찾기
+                found = False
+                for db_entry in all_workbooks_data:
+                    db_publish = db_entry.get('publish', '')
+                    db_workbook = db_entry.get('workbook', '')
+                    db_grade = db_entry.get('grade', '')
+                    
+                    if (db_grade == grade and 
+                        db_publish == publish and 
+                        db_workbook == workbook):
+                        
+                        logger.info(f"일치하는 문제집 찾음: {db_publish} - {db_workbook}")
+                        if db_entry not in relevant_workbooks:
+                            relevant_workbooks.append(db_entry)
+                        found = True
+                
+                if not found:
+                    logger.warning(f"일치하는 문제집을 찾지 못했습니다: {publish} - {workbook}")
+            
+            # 여전히 문제집을 찾지 못한 경우, 해당 학년의 모든 문제집을 사용
+            if not relevant_workbooks:
+                logger.warning(f"관련 문제집을 찾을 수 없어 해당 학년({grade})의 모든 문제집을 사용합니다.")
+                relevant_workbooks = [wb for wb in all_workbooks_data if wb.get('grade') == grade]
+        except Exception as e:
+            logger.warning(f"기존 스케줄에서 문제집 정보 추출 중 오류: {e}")
+            # 오류가 있어도 계속 진행하되, 모든 문제집 데이터를 사용
+            relevant_workbooks = [wb for wb in all_workbooks_data if wb.get('grade') == grade]
+        
+        if not relevant_workbooks:
+            logger.warning(f"관련 문제집을 찾을 수 없음. 해당 학년의 모든 문제집 사용: {grade}")
+            # 해당 학년의 모든 문제집 데이터를 사용
+            relevant_workbooks = [wb for wb in all_workbooks_data if wb.get('grade') == grade]
+            
+        if not relevant_workbooks:
+            raise HTTPException(
+                status_code=400,
+                detail=f"해당 학년({grade})에 대한 문제집 데이터를 찾을 수 없습니다."
+            )
+        
+        logger.info(f"관련 문제집 {len(relevant_workbooks)}개 발견")
+        
+        # 5. SDM을 사용하여 스케줄 수정
+        logger.info(f"사용자 {user_id}의 스케줄 수정 시작")
         modified_schedule = sdm.modify_ai_schedule(
-            original_schedule=original_schedule,
-            modification_request=modification_request
+            student_data=student_data,
+            relevant_workbooks=relevant_workbooks,
+            existing_schedule=existing_schedule,
+            feedback=feedback
         )
         
-        # 5. Check for errors in the response
+        # 6. 에러 체크
         if "error" in modified_schedule:
-            logger.error(f"SDM modification failed: {modified_schedule['error']}")
+            logger.error(f"SDM 스케줄 수정 실패: {modified_schedule['error']}")
             raise HTTPException(
                 status_code=400,
                 detail=modified_schedule["error"]
             )
-            
-        # 6. Update user's schedule in the database
-        user_id = current_user.get("userID")
-        users_collection = db["user_db"]
         
-        update_result = await users_collection.update_one(
-            {"userID": user_id},
-            {"$set": {"schedule": modified_schedule}}
+        # 7. 수정된 스케줄을 데이터베이스에 저장
+        schedule_collection = db["schedule"]
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        
+        # 기존 스케줄을 업데이트하거나 새로 삽입
+        await schedule_collection.update_one(
+            {"userID": user_id, "created_date": current_date},
+            {"$set": {
+                "modified_at": datetime.now(),
+                "modified_schedule_data": modified_schedule,
+                "original_schedule_data": existing_schedule,
+                "feedback_applied": feedback,
+                "modification_count": 1  # 추후 수정 횟수 추적을 위해
+            }},
+            upsert=True
         )
         
-        if update_result.modified_count == 0:
-            logger.warning(f"No documents were updated for user {user_id}")
-            
-        logger.info(f"Successfully updated schedule for user {user_id}")
+        logger.info(f"사용자 {user_id}의 스케줄 수정 완료")
         
         return {
             "success": True,
-            "message": "Schedule modified successfully",
-            "modified_schedule": modified_schedule
+            "message": "스케줄이 성공적으로 수정되었습니다.",
+            "modified_schedule": modified_schedule,
+            "applied_feedback": feedback,
+            "modified_at": datetime.now().isoformat()
         }
         
     except HTTPException as he:
-        # Re-raise HTTP exceptions
+        # HTTP 예외는 그대로 재발생
         raise he
         
     except Exception as e:
-        logger.error(f"Unexpected error in modify_scope: {str(e)}", exc_info=True)
+        logger.error(f"스케줄 수정 중 예기치 않은 오류: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="An unexpected error occurred while processing your request"
+            detail=f"스케줄 수정 중 오류가 발생했습니다: {str(e)}"
         )
 
 

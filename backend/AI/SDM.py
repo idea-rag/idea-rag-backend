@@ -105,96 +105,162 @@ class SDM:
             print(f"[ERROR] 스케줄 생성 중 예기치 않은 오류가 발생했습니다: {e}")
             return {"error": f"알 수 없는 오류가 발생했습니다: {e}"}
 
-    def modify_ai_schedule(self, original_schedule: dict, modification_request: dict) -> dict:
-        original_schedule_str = json.dumps(original_schedule, indent=2, ensure_ascii=False)
-        modification_request_str = json.dumps(modification_request, indent=2, ensure_ascii=False)
+    def modify_ai_schedule(self, student_data: dict, relevant_workbooks: list, existing_schedule: dict, feedback: str) -> dict:
+        """
+        기존 스케줄과 사용자 피드백을 바탕으로 새로운 스케줄을 생성합니다.
 
-        prompt_message = f"""
-        당신은 학생의 기존 학습 스케줄을 사용자의 새로운 요구사항에 맞게 수정하는 AI 학습 코치입니다.
+        Args:
+            student_data: 학생 정보 (userID, grade 등)
+            relevant_workbooks: 관련 문제집 데이터
+            existing_schedule: 기존 스케줄 데이터
+            feedback: 사용자 피드백 (수정 요청 사항)
 
-        [기존 학습 스케줄]
-        {original_schedule_str}
-
-        [수정 요청 사항]
-        {modification_request_str}
-
-        [지시사항]
-        1. [수정 요청 사항]을 [기존 학습 스케줄]에 자연스럽게 반영하여 전체 계획을 재구성해주세요.
-        2. 특정 과목의 변경, 추가 또는 삭제 요청을 정확히 이행하고, 나머지 공부 시간과의 균형을 맞춰주세요.
-        3. 결과는 다른 설명 없이 수정된 '완전한 형태의 계획표 JSON 객체'로만 제공해주세요.
+        Returns:
+            dict: 수정된 스케줄 또는 에러 메시지
         """
         try:
-            print("\n[INFO] OpenAI API에 스케줄 수정을 요청합니다...")
+            # 입력 데이터 검증
+            if not student_data:
+                return {"error": "학생 데이터가 제공되지 않았습니다."}
+
+            if not relevant_workbooks:
+                return {"error": "관련 문제집 데이터가 제공되지 않았습니다."}
+
+            if not existing_schedule:
+                return {"error": "기존 스케줄이 제공되지 않았습니다."}
+
+            # 데이터 문자열로 변환
+            student_data_str = json.dumps(student_data, ensure_ascii=False, indent=2)
+            workbooks_data_str = json.dumps(relevant_workbooks, ensure_ascii=False, indent=2)
+            existing_schedule_str = json.dumps(existing_schedule, ensure_ascii=False, indent=2)
+            current_date = datetime.now().strftime("%Y-%m-%d")
+
+            prompt_message = f"""
+            당신은 전문 학습 컨설턴트입니다. 학생의 기존 학습 스케줄을 사용자의 피드백에 맞게 수정하여 새로운 학습 계획표를 작성해주세요.
+
+            [지시사항]
+            1. [기존 스케줄]을 기반으로 [사용자 피드백]의 요청사항을 반영해주세요.
+            2. [관련 문제집 데이터]의 단원('work' 리스트)을 활용하여 학습 계획을 조정해주세요.
+            3. 피드백이 구체적이지 않다면 학생에게 더 도움이 되는 방향으로 스케줄을 개선해주세요.
+            4. 각 계획 항목에는 과목, 출판사, 문제집 이름, 공부할 단원명('scope'), 중요도(1~3), 완료 여부('isFinished': false)가 포함되어야 합니다.
+            5. 학습량의 균형을 맞추고, 주말에는 적절한 휴식이나 복습을 배치해주세요.
+            6. 최종 결과는 반드시 아래 [출력 JSON 형식]에 맞춰 다른 설명 없이 JSON 객체만 반환해주세요.
+
+            [학생 데이터]
+            {student_data_str}
+
+            [관련 문제집 데이터]
+            {workbooks_data_str}
+
+            [기존 스케줄]
+            {existing_schedule_str}
+
+            [사용자 피드백]
+            {feedback}
+
+            [출력 JSON 형식]
+            {{
+              "{current_date}": {{
+                "1": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ],
+                "2": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ],
+                "3": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ],
+                "4": [ {{ "name": "<학생ID>", "weekplan": {{ "day1": [{{...}}], ... "day7": [{{...}}] }} }} ]
+              }}
+            }}
+            """
+
+            print("[INFO] OpenAI API에 스케줄 수정을 요청합니다...")
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "당신은 기존 스케줄을 사용자의 요청에 맞게 유연하게 수정하고 완전한 JSON 결과물만 반환하는 AI입니다."},
+                    {"role": "system", "content": "당신은 기존 스케줄을 사용자의 피드백에 맞게 유연하게 수정하고 완전한 JSON 결과물만 반환하는 AI 학습 컨설턴트입니다."},
                     {"role": "user", "content": prompt_message}
                 ],
+                temperature=0.7,
                 response_format={"type": "json_object"}
             )
+
             modified_schedule_str = response.choices[0].message.content
             return json.loads(modified_schedule_str)
+
+        except openai.APIError as e:
+            print(f"[ERROR] OpenAI API 오류가 발생했습니다: {e}")
+            return {"error": f"API 오류: {e}"}
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] AI 응답을 JSON으로 파싱하는 중 오류가 발생했습니다: {e}")
+            return {"error": "AI 응답을 처리하는 데 실패했습니다. 응답 형식이 올바르지 않습니다."}
         except Exception as e:
-            print(f"[ERROR] 스케줄 수정 중 API 요청 오류가 발생했습니다: {e}")
-            return {"error": "스케줄을 수정하는 중 AI 코치에게 문제가 발생했어요. 잠시 후 다시 시도해주세요."}
+            print(f"[ERROR] 스케줄 수정 중 예기치 않은 오류가 발생했습니다: {e}")
+            return {"error": f"알 수 없는 오류가 발생했습니다: {e}"}
 
 
 if __name__ == "__main__":
     sdm_handler = SDM()
 
-    sample_study_data = {
-  "when": 1,
-  "subjects": [
-    {
-      "grade": "middleschool-1",
-      "publish": "미래엔 (MiraeN)",
-      "workbook": "국어",
-      "work": [
-      "운수 좋은 날",
-      "나의 모국어는 침묵",
-      "소나기",
-      "마음을 여는 소통, 공감",
-      "우주 쓰레기, 해결 방법은 없을까",
-      "함께 지키는 저작권",
-      "동물원, 과연 필요한가"
-    ]
-    },
-    {
-      "grade": "middleschool-1",
-      "publish": "비상교육 (VISANG)",
-      "workbook": "수학"
+    # 샘플 데이터로 테스트
+    sample_student_data = {
+        "user_id": "testuser123",
+        "grade": "middleschool-1",
+        "subjects": [
+            {
+                "grade": "middleschool-1",
+                "publish": "미래엔 (MiraeN)",
+                "workbook": "국어"
+            },
+            {
+                "grade": "middleschool-1",
+                "publish": "비상교육 (VISANG)",
+                "workbook": "수학"
+            }
+        ],
+        "goal": "이번 달에는 수학 '방정식' 단원과 국어 '소나기' 작품을 완벽하게 이해하고 싶어요."
     }
-  ],
-  "goal": "이번 달에는 수학 '방정식' 단원과 국어 '소나기' 작품을 완벽하게 이해하고 싶어요."
-}
 
-
-    initial_schedule = sdm_handler.get_ai_schedule(sample_study_data)
-
-    print("\n--- 🤖 AI 코치가 RAG 기반으로 생성한 초기 스케줄 ---")
+    # 초기 스케줄 생성
+    initial_schedule = sdm_handler.get_ai_schedule(sample_student_data)
+    print("\n--- 🤖 AI 코치가 생성한 초기 스케줄 ---")
     print(json.dumps(initial_schedule, indent=2, ensure_ascii=False))
-    print("------------------------------------------------")
 
     if "error" not in initial_schedule:
-        user_modification_request = {
-            "request_type": "UPDATE_SUBJECT",
-            "week": "2",
-            "day": "day3",
-            "target_subject": "수학",
-            "new_plan": {
-                "subject": "수학",
+        # 샘플 문제집 데이터 (실제로는 dict.json에서 가져옴)
+        sample_workbooks = [
+            {
+                "grade": "middleschool-1",
+                "publish": "미래엔 (MiraeN)",
+                "workbook": "국어",
+                "work": [
+                    "운수 좋은 날",
+                    "나의 모국어는 침묵",
+                    "소나기",
+                    "마음을 여는 소통, 공감",
+                    "우주 쓰레기, 해결 방법은 없을까",
+                    "함께 지키는 저작권",
+                    "동물원, 과연 필요한가"
+                ]
+            },
+            {
+                "grade": "middleschool-1",
                 "publish": "비상교육 (VISANG)",
                 "workbook": "수학",
-                "scope": "II. 문자와 식 > 2. 일차방정식의 활용 복습",
-                "importance": 5,
-                "isFinished": False
-            },
-            "reason": "일차방정식 활용이 어려워서 한번 더 복습하고 싶어요."
-        }
-        #
-        # modified_schedule = sdm_handler.modify_ai_schedule(initial_schedule, user_modification_request)
-        #
-        # print("\n--- ✍️ AI 코치가 수정한 최종 스케줄 ---")
-        # print(json.dumps(modified_schedule, indent=2, ensure_ascii=False))
-        # print("------------------------------------")
+                "work": [
+                    "자연수의 성질",
+                    "정수와 유리수",
+                    "문자와 식",
+                    "일차방정식",
+                    "좌표평면과 그래프"
+                ]
+            }
+        ]
+
+        # 피드백을 통한 스케줄 수정
+        user_feedback = "수학이 너무 어려워서 진도를 조금 늦추고 싶어요. 그리고 국어 '소나기' 부분을 더 집중적으로 공부하고 싶습니다."
+
+        modified_schedule = sdm_handler.modify_ai_schedule(
+            student_data=sample_student_data,
+            relevant_workbooks=sample_workbooks,
+            existing_schedule=initial_schedule,
+            feedback=user_feedback
+        )
+
+        print("\n--- ✍️ 피드백을 반영한 수정된 스케줄 ---")
+        print(json.dumps(modified_schedule, indent=2, ensure_ascii=False))

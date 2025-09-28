@@ -64,7 +64,7 @@ class FFBM:
                 total_measure += slot_measure
                 total_focus += slot_focus
             
-            # 전체 집중도 계산 (분 단위)
+            # 전체 집중도 계산 (분 단위)    
             focus_rate = (total_focus / total_measure * 100) if total_measure > 0 else 0
             
             # 피드백 문구 생성
