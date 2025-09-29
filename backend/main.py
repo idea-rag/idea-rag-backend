@@ -122,10 +122,10 @@ async def register(
         "password": hashed_password,
         "subject_name": data.subject_name,
         "subject_publish": data.subject_publish,
-        "subject_BookList": data.subject_BookList,
-        "Subject_Module": data.Subject_Module,
+        "subject_book_list": data.subject_book_list,
+        "Subject_Module": data.subject_module,
         "focus_Grade": data.focus_Grade,
-        "WhatWeek": data.WhatWeek
+        "WhatWeek": data.what_week
     }
 
     existing_user = await users_collection.find_one({"userID": data.get("userID")})
