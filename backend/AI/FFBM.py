@@ -97,7 +97,7 @@ class FFBM:
         try:
             print("OpenAI API에 피드백을 요청합니다...")
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4.1",
                 messages=[
                     {
                         "role": "system", 
@@ -109,7 +109,7 @@ class FFBM:
                     }
                 ],
                 temperature=0.7,
-                max_tokens=300
+                max_tokens=550
             )
             # 응답에서 줄바꿈 문자 제거
             llm_message = response.choices[0].message.content
