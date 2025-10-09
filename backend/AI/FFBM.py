@@ -25,6 +25,26 @@ class FFBM:
         4. 학생의 이름 대신 "학생" 또는 "여러분"과 같은 호칭을 사용하세요.
         5. 학생의 의지를 북돋우고, 자존감을 세워줄 수 있는 긍정적인 피드백을 주세요.
         6. 제공된 데이터를 자연스럽게 문장에 녹여서 설명해주세요.
+        
+        [예시 입력]
+        
+        {
+    "whenDay": "날짜",
+      "timeSlots": {
+        "시간:분": { "measureTime": 측정시간(분), "focusTime": 집중시간(분) },
+        "시간:분": { "measureTime": 측정시간(분), "focusTime": 집중시간(분) }
+      },
+      "studyData": {
+        "YYYY-MM-DD": [
+          {
+            "name": "할 일 내용",
+            "importance": 과제의 중요도 (1 ~ 5),
+            "isChecked": False,
+            "whatDay": "요일"
+          },
+        ]
+      }
+    }
         """
 
         # 학습 관련 정보를 프롬프트에 추가
@@ -126,21 +146,36 @@ if __name__ == "__main__":
     # 1. 집중도가 높은 경우 (83.3%)
     print("\n[Case 1: 집중도 높은 경우]")
     high_focus_data = {
-        "whenDay": "오늘",
-        "timeSlots": {
-            "16": {"measureTime": 1800, "focusTime": 1500}  # 30분 중 25분
-        }
+    "whenDay": "2023-09-24",
+      "timeSlots": {
+        "14:30": { "measureTime": 10, "focusTime": 2 },
+        "14:35": { "measureTime": 10, "focusTime": 8 }
+      },
+      "studyData": {
+        "2023-09-22": [
+          {
+            "name": "할 일 내용",
+            "importance": 3,
+            "isChecked": False,
+            "whatDay": "금요일"
+          },
+          {
+            "name": "다른 할 일",
+            "importance": 1,
+            "isChecked": True,
+            "whatDay": "금요일"
+          }
+        ],
+        "2023-09-23": [
+          {
+            "name": "주말 할 일",
+            "importance": 2,
+            "isChecked": False,
+            "whatDay": "토요일"
+          }
+        ]
+      }
     }
+
     feedback1 = ffbm.get_ai_feedback(test_study_data, high_focus_data)
     print("생성된 AI 피드백:", feedback1)
-
-    # 2. 집중도가 낮은 경우 (33.3%)
-    print("\n[Case 2: 집중도 낮은 경우]")
-    low_focus_data = {
-        "whenDay": "어제",
-        "timeSlots": {
-            "21": {"measureTime": 1800, "focusTime": 600}  # 30분 중 10분
-        }
-    }
-    feedback2 = ffbm.get_ai_feedback(test_study_data, low_focus_data)
-    print("생성된 AI 피드백:", feedback2)
